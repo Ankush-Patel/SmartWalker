@@ -1,17 +1,25 @@
+// This example shows how to connect to Cayenne using an ESP8266 and send/receive sample data.
+// Make sure you install the ESP8266 Board Package via the Arduino IDE Board Manager and select the correct ESP8266 board before compiling. 
 
-#include <ESP8266WiFi.h>
+//#define CAYENNE_DEBUG
+#define CAYENNE_PRINT Serial
+#include <CayenneMQTTESP8266.h>
 #include <HX711.h>
-
 #define Buzzerout D2 //D2
 #define DOUT D4 //D4
 #define CLK D5 //D5
 #define LEDout D6 //D6
 
-const char WiFiPassword[] = "12345678";
-const char AP_NameChar[] = "WIFIWalker";
-WiFiServer server(80);
+// WiFi network info.
+char ssid[] = "Zeiny's iPhone";
+char wifiPassword[] = "formulaone";
 
-HX711 scale(DOUT, CLK);
+// Cayenne authentication info. This should be obtained from the Cayenne Dashboard.
+char username[] = "46f902f0-5bea-11e9-bb1a-97096e6377d3";
+char password[] = "1f24a702c2b8e43ba04814e0929e0ac352d09423";
+char clientID[] = "5092e5b0-5bea-11e9-81a2-d1fdd4219210";
+
+HX711 scale;
 float calibration_factor=5220;
 float units;
 float ounces;
@@ -20,105 +28,56 @@ float person_weight = 170;
 float weightmath;
 float notifmethod=1;
 
-String header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n";
-String html_1 = "<!DOCTYPE html><html><head><title>LED Control</title></head><body><div id='main'><h2>LED Control</h2>";
-String html_2 = "<form id='F1' action='LEDON'><input class='button' type='submit' value='LED ON' ></form><br>";
-String html_3 = "<form id='F2' action='LEDOFF'><input class='button' type='submit' value='LED OFF' ></form><br>";
-String html_4 = "</div></body></html>";
- 
-String request = "";
-//================================================================
-//            SETUP
-//================================================================
+unsigned long lastMillis = 0;
+//================================================================//
+//                            SETUP                               //
+//================================================================//
 void setup() {
-    boolean conn = WiFi.softAP(AP_NameChar, WiFiPassword);
-    server.begin();
- 
- // Serial.begin(9600);
+  Serial.begin(9600);
+  Cayenne.begin(username, password, clientID, ssid, wifiPassword);
+  scale.begin(DOUT, CLK);
   pinMode(Buzzerout, OUTPUT);
   digitalWrite(Buzzerout, HIGH);
-  scale.set_scale();
+  scale.set_scale(5220.f);
   scale.tare();
-  
 }
-//================================================================
-//            LOOP
-//================================================================
-void loop() {
-  // Check if a client has connected
-    WiFiClient client = server.available();
-    if (!client)  {  return;  }
- 
-    // Read the first line of the request
-    request = client.readStringUntil('\r');
- 
-   // if       ( request.indexOf("LEDON") > 0 )  { digitalWrite(LED_Pin, HIGH);  }
-   // else if  ( request.indexOf("LEDOFF") > 0 ) { digitalWrite(LED_Pin, LOW);   }
- 
-    client.flush();
- 
-    client.print( header );
-    client.print( html_1 );
-    client.print( html_2 );
-    client.print( html_3 );
-    client.print( html_4);
- 
-    delay(5);
-   scale.set_scale(calibration_factor);
-  units=scale.get_units(), 10;
-  if (units < 0){
-  units = 0.00;
-  }
 
+
+//================================================================//
+//                            LOOP                                //
+//================================================================//
+void loop() {
+  Cayenne.loop();
   weightmath=(percent_load * person_weight);
-  if (notifmethod = 1) {
+  units=(scale.get_units(10), 1);
+  if (units < 0){
+    units= 0.00;
+  }
+  // Insert an if statement here which select this notification method
   if (units > weightmath){
     digitalWrite(Buzzerout, LOW);
     delay(500);
     digitalWrite(Buzzerout, HIGH);
   }
-  }
-  if (notifmethod = 2) {
-    if (units > weightmath){
-      digitalWrite(LEDout, HIGH);
-      delay(100);
-      digitalWrite(LEDout, LOW);
-      delay(100);
-      digitalWrite(LEDout, HIGH);
-      delay(100);
-      digitalWrite(LEDout, LOW);
-      delay(100);  
-      digitalWrite(LEDout, HIGH);
-      delay(100);
-      digitalWrite(LEDout, LOW);
-      delay(100);
-      digitalWrite(LEDout, HIGH);
-      delay(100);
-      digitalWrite(LEDout, LOW);  
-    }
-  }
-  if (notifmethod = 3){
-    if (units > weightmath){
-      digitalWrite(Buzzerout, LOW);
-      digitalWrite(LEDout, HIGH);
-      delay(100);
-      digitalWrite(LEDout, LOW);
-      delay(100);
-      digitalWrite(LEDout, HIGH);
-      delay(100);
-      digitalWrite(LEDout, LOW);
-      delay(100);  
-      digitalWrite(LEDout, HIGH);
-      delay(100);
-      digitalWrite(LEDout, LOW);
-      digitalWrite(Buzzerout, HIGH);
-    }
-  }
-  Serial.print("Reading: ");
-  Serial.print(units);
-  Serial.print(" Pounds");
-  Serial.println();
-  Serial.print("Current Load Threshold: ");
-  Serial.print(weightmath);
-  Serial.println();
+}
+
+// Default function for sending sensor data at intervals to Cayenne.
+// You can also use functions for specific channels, e.g CAYENNE_OUT(1) for sending channel 1 data.
+CAYENNE_OUT_DEFAULT()
+{
+  // Write data to Cayenne here. This example just sends the current uptime in milliseconds on virtual channel 0.
+  Cayenne.virtualWrite(0, millis());
+  Cayenne.virtualWrite(4, units);
+  // Some examples of other functions you can use to send data.
+  //Cayenne.celsiusWrite(1, 22.0);
+  //Cayenne.luxWrite(2, 700);
+  //Cayenne.virtualWrite(3, 50, TYPE_PROXIMITY, UNIT_CENTIMETER);
+}
+
+// Default function for processing actuator commands from the Cayenne Dashboard.
+// You can also use functions for specific channels, e.g CAYENNE_IN(1) for channel 1 commands.
+CAYENNE_IN_DEFAULT()
+{
+  CAYENNE_LOG("Channel %u, value %s", request.channel, getValue.asString());
+  //Process message here. If there is an error set an error message using getValue.setError(), e.g getValue.setError("Error message");
 }
